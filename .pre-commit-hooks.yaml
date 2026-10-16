@@ -1,0 +1,6 @@
+- id: check-argv-secrets
+  name: no secrets on command lines
+  description: Fail when scripts or CI pipelines pass a secret as a command-line argument (CWE-214).
+  entry: check-argv-secrets.sh
+  language: script
+  files: '(\.(sh|bash|zsh|ya?ml|py|ps1|mk)$|(^|/)(Makefile|Dockerfile|Jenkinsfile)$)'

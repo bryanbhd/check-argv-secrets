@@ -1,0 +1,15 @@
+# Azure DevOps and GitHub Actions: map the secret into env, use it as "$VAR" in the script.
+steps:
+  - bash: |
+      curl -sS --data @<(printf '{"secret_id":"%s"}' "$VAULT_SECRET_ID") https://vault.example.com/v1/auth/approle/login
+    env:
+      VAULT_SECRET_ID: $(VAULT_SECRET_ID)
+jobs:
+  deploy:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.CHECKOUT_TOKEN }}
+      - run: ./deploy.sh
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
