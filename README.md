@@ -52,6 +52,20 @@ environment**, never as an argument.
 `<(…)` and `--data @-` hand curl a pipe or file descriptor, so the secret never appears in any
 process's arguments. `printf` is a bash builtin, so it doesn't start a process either.
 
+## Pair it with agent instructions
+
+If AI coding agents work in your repos, tell them the rule *and* enforce it:
+
+- **[`examples/AGENTS.md`](examples/AGENTS.md)** is a drop-in "Secrets" section for your agent
+  instructions (AGENTS.md, CLAUDE.md, `.github/copilot-instructions.md`, …). It covers where
+  secrets live, never printing them, and the safe forms above.
+- **This check** fails the build when the rule is broken anyway.
+
+Instructions are advice; agents, like people, don't always take it. Commands an agent runs are
+also written into its transcripts and logs, so a secret on a command line ends up in the agent's
+history as well as in `ps`. Memory tells the agent what went wrong last time. The gate makes sure
+it can't happen again.
+
 ## Use it
 
 ```bash
