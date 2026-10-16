@@ -1,0 +1,4 @@
+steps:
+  - bash: |
+      curl -sS --data @- https://vault.example.com/v1/auth/approle/login <<< '{"secret_id":"$(VAULT_SECRET_ID)"}'
+    displayName: login

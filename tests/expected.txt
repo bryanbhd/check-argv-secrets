@@ -1,0 +1,12 @@
+# file line rule - every place the bad fixtures must be flagged (and nothing else)
+bad/ado-macro.yml 3 ado-macro
+bad/curl-body.sh 2 curl-body
+bad/curl-body.sh 3 curl-body
+bad/curl-header.sh 2 curl-header
+bad/curl-header.sh 3 curl-header
+bad/gha-secret.yml 5 gha-secret
+bad/password-flag.sh 2 password-flag
+bad/password-flag.sh 3 password-flag
+bad/password-flag.sh 4 password-flag
+bad/subshell.sh 2 subshell
+bad/subshell.sh 3 subshell
