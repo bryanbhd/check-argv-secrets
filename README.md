@@ -70,6 +70,60 @@ also written into its transcripts and logs, so a secret on a command line ends u
 history as well as in `ps`. Memory tells the agent what went wrong last time. The gate makes sure
 it can't happen again.
 
+## Agent memory scanner
+
+AI agents that keep persistent memory (Claude Code, Cursor, Copilot workspace instructions) store
+markdown notes with example commands, debug output, and pasted credentials. A secret written
+"for reference" stays in context forever.
+
+**`check-memory-secrets.sh`** scans agent memory files for embedded secrets and can scrub them:
+
+```bash
+bash check-memory-secrets.sh                    # scan .claude/projects/*/memory/
+bash check-memory-secrets.sh --scrub            # replace secrets with [REDACTED]
+bash check-memory-secrets.sh --purge-line       # delete entire lines containing secrets
+bash check-memory-secrets.sh --dry-run --scrub  # preview changes without writing
+bash check-memory-secrets.sh --scan-all         # also scan all .md in the repo
+```
+
+Options:
+- `--scan-memory` — scan `.claude/projects/*/memory/` (default)
+- `--scan-all` — scan all markdown files in the repo
+- `--scrub` — replace secret values with `[REDACTED]` in-place (creates `.bak-YYYYMMDD`)
+- `--purge-line` — delete entire lines containing secrets (creates `.bak-YYYYMMDD`)
+- `--dry-run` — with `--scrub`/`--purge-line`: show what would change, don't write
+- `--allow-file FILE` — allow-list file: one `FILE:LINE` or `FILE` per line to skip
+- `--patterns FILE` — extra patterns from an external scanner (see below)
+- `--exclude REGEX` — skip files matching REGEX (repeatable)
+- `-q` — findings only
+
+### Extensible patterns from other scanners
+
+The `--patterns FILE` flag accepts external pattern sets in a simple format:
+one extended regular expression per line (`#` comments allowed). This lets you
+import patterns from established secret-scanning projects:
+
+- **Gitleaks** — https://github.com/gitleaks/gitleaks (MIT) — 100+ token formats
+- **TruffleHog** — https://github.com/trufflesecurity/trufflehog (Apache 2.0)
+- **detect-secrets** — https://github.com/Yelp/detect-secrets (Apache 2.0)
+
+A pre-extracted Gitleaks pattern set ships in `patterns/gitleaks-patterns.txt`.
+Use it with:
+
+```bash
+bash check-memory-secrets.sh --patterns patterns/gitleaks-patterns.txt --scrub
+```
+
+To add your own or upstream a new scanner's patterns:
+1. Extract regex rules from the scanner's config
+2. Write one ERE per line to `patterns/<scanner>-patterns.txt`
+3. Reference it with `--patterns`
+
+**Note:** Patterns from git-focused scanners (gitleaks, trufflehog) are tuned for code repos
+where random hex strings are suspicious. Memory files contain more UUIDs, session IDs, and
+example text, so expect more false positives. The `patterns/gitleaks-patterns.txt` file has been
+tuned for memory scanning; use `--allow-file` to skip known-safe files or lines.
+
 ## Use it
 
 ```bash
