@@ -6,13 +6,17 @@ Fail the build when a script or CI pipeline **passes a secret on a command line*
 curl -H "Authorization: Bearer $TOKEN" https://api.example.com/   # leaks $TOKEN
 ```
 
-While that runs, any user on the machine can read the token with `ps` or
-`/proc/<pid>/cmdline` [1]. That covers other containers' users on a shared host, monitoring
-agents, and process-accounting logs. The weakness has a name: **CWE-214, Invocation of Process
-Using Visible Sensitive Information** [2].
+A command line is a postcard, not an envelope. While that command runs, any user on the machine
+can read the token with `ps` or `/proc/<pid>/cmdline` [1] — other users, monitoring agents, other
+containers' users on a shared host, and process-accounting logs. The weakness has a name:
+**CWE-214, Invocation of Process Using Visible Sensitive Information** [2].
 
-Secret scanners like gitleaks find secrets *written into* files. This finds code that *passes*
-secrets as arguments at runtime. They do different jobs, so run both.
+So the fix is not a smarter secret. It is to stop putting the secret where strangers can read it:
+hand it over on **stdin, a file, or an environment variable** instead of as an argument.
+
+Secret scanners like gitleaks find secrets *written into* files — the key you pasted and
+committed. This finds code that *passes* secrets as arguments at runtime — the key your script
+shouts at `curl` on every deploy. They do different jobs, so run both.
 
 It comes in two forms that run the same checks against the same test fixtures:
 
@@ -94,7 +98,7 @@ semgrep scan --config rules/argv-secrets.yaml .
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/bryanbhd/check-argv-secrets
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: check-argv-secrets
 ```
@@ -105,7 +109,7 @@ repos:
 - uses: actions/checkout@v4
 - name: no secrets on command lines
   run: |
-    curl -fsSLO https://raw.githubusercontent.com/bryanbhd/check-argv-secrets/v0.1.0/check-argv-secrets.sh
+    curl -fsSLO https://raw.githubusercontent.com/bryanbhd/check-argv-secrets/v0.2.0/check-argv-secrets.sh
     bash check-argv-secrets.sh
 ```
 
@@ -113,7 +117,7 @@ repos:
 
 ```yaml
 - bash: |
-    curl -fsSLO https://raw.githubusercontent.com/bryanbhd/check-argv-secrets/v0.1.0/check-argv-secrets.sh
+    curl -fsSLO https://raw.githubusercontent.com/bryanbhd/check-argv-secrets/v0.2.0/check-argv-secrets.sh
     bash check-argv-secrets.sh
   displayName: no secrets on command lines
 ```
