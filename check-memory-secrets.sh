@@ -19,6 +19,10 @@
 #   --scrub                    replace secrets in-place with [REDACTED] (creates .bak-YYYYMMDD)
 #   --purge-line               delete entire lines containing secrets (creates .bak-YYYYMMDD)
 #   --dry-run                  with --scrub/--purge-line: show what would change, don't write
+#   --harness NAME             scan a tool's whole history, not just memory notes: claude, opencode, codex, vscode,
+#                              ollama, or all (repeatable). Read-only and counts-only: prints `file: [id] xN`,
+#                              refuses --scrub/--purge-line/--show-match, never opens credential files
+#   --noisy                    with --harness: also run patterns that match ordinary strings (hex-api-key)
 #   --show-match               also print the matching text (OFF by default: a finding must not copy the secret
 #                              into your terminal, logs or an agent transcript)
 #   -q, --quiet                only print findings
@@ -34,6 +38,10 @@ SCRUB=0
 DRY_RUN=0
 PURGE_LINE=0
 SHOW_MATCH=0
+HARNESSES=()
+NOISY=0
+# Patterns that match ordinary strings (SHA-256 sums look like 64-hex keys): skipped in --harness mode unless --noisy
+NOISY_IDS=" hex-api-key "
 SCAN_MEMORY=0
 SCAN_ALL=0
 ALLOW_FILE=""
@@ -74,7 +82,7 @@ PATTERNS=(
   "stripe-key|Stripe API key|(sk|pk)_(live|test)_[A-Za-z0-9]{20,}"
 
   # Twilio auth keys
-  "twilio-key|Twilio auth key|SK[A-Za-z0-9]{32}"
+  "twilio-key|Twilio API key SID|(^|[^A-Za-z0-9])SK[0-9a-f]{32}($|[^A-Za-z0-9])"
 
   # Docker Hub tokens
   "docker-token|Docker Hub personal access token|dckr_pat_[A-Za-z0-9_-]{20,}"
@@ -111,7 +119,7 @@ PATTERNS=(
   "sshpass|SSHPASS set inline|SSHPASS=[\"']?[A-Za-z0-9+/=_-]{6,}[\"']?"
 
   # Azure DevOps PATs (v1/v2)
-  "ado-pat|Azure DevOps personal access token|[A-Za-z0-9]{52}"
+  "ado-pat|Azure DevOps personal access token|(^|[^A-Za-z0-9])[a-z2-7]{52}($|[^A-Za-z0-9])"
 
   # Generic hex API keys (64 hex chars standalone, not embedded in paths/URLs)
   # Only match when surrounded by whitespace or common delimiters, not path segments
@@ -131,6 +139,12 @@ while [ $# -gt 0 ]; do
     --purge-line) PURGE_LINE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --show-match) SHOW_MATCH=1; shift ;;
+    --noisy) NOISY=1; shift ;;
+    --harness)
+      case "${2:-}" in claude|opencode|codex|vscode|ollama) HARNESSES+=("$2") ;;
+        all) HARNESSES+=(claude opencode codex vscode ollama) ;;
+        *) die "--harness needs one of: claude opencode codex vscode ollama all" ;; esac
+      shift 2 ;;
     -q|--quiet) QUIET=1; shift ;;
     -h|--help) sed -n '2,/^set -uo/{/^set -uo/d;s/^# \{0,1\}//;p}' "$0"; exit 0 ;;
     --) shift; PATHS+=("$@"); break ;;
@@ -164,7 +178,7 @@ if [ ${#PATHS[@]} -eq 0 ] && [ "$SCAN_MEMORY" -eq 0 ] && [ "$SCAN_ALL" -eq 0 ]; 
 fi
 
 # Known harness memory locations (add your own via --scan-harness PATH)
-HARNESS_DIRS=(
+HARNESS_DIRS=(   # legacy list, superseded by --harness
   "$HOME/.claude/projects"
 )
 
@@ -199,6 +213,47 @@ collect() {
     fi
   fi
 }
+
+# ---- harness mode: whole-history scan, read-only, counts only ---------------------------------------------------------
+# Transcripts and databases hold one giant line each, so line numbers mean nothing and a matched line could be a whole
+# conversation. This mode therefore never prints text, never writes, and skips files that exist to hold credentials.
+harness_files() {
+  local h
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude)   [ -d "$HOME/.claude/projects" ] && find "$HOME/.claude/projects" -type f \( -name '*.jsonl' -o -name '*.md' -o -name '*.json' \) ;;
+      opencode) [ -d "$HOME/.local/share/opencode" ] && find "$HOME/.local/share/opencode" -type f \
+                  \( -path '*/storage/*' -o -path '*/tool-output/*' -o -path '*/log/*' -o -path '*/shell/*' -o -name 'opencode.db*' \) ;;
+      codex)    [ -d "$HOME/.codex" ] && find "$HOME/.codex" -type f \
+                  \( -path '*/sessions/*' -o -path '*/shell_snapshots/*' -o -name '*.sqlite*' -o -name 'session_index.jsonl' -o -name 'config.toml' \) ;;
+      vscode)   for d in "$HOME/.vscode-server/data/User" "$HOME/.config/Code/User"; do
+                  [ -d "$d" ] && find "$d" -type f \( -name 'state.vscdb*' -o -path '*chatSessions/*' -o -path '*chatEditingSessions/*' \)
+                done ;;
+      ollama)   [ -f "$HOME/.ollama/history" ] && printf '%s\n' "$HOME/.ollama/history" ;;
+    esac
+  done | grep -v -E '(^|/)(auth\.json[^/]*|\.credentials\.json|id_ed25519[^/]*|node_modules|\.git)(/|$)'
+}
+
+if [ ${#HARNESSES[@]} -gt 0 ]; then
+  [ "$SCRUB" -eq 0 ] && [ "$PURGE_LINE" -eq 0 ] && [ "$SHOW_MATCH" -eq 0 ] \
+    || die "--harness is read-only and counts-only: it cannot be combined with --scrub, --purge-line or --show-match"
+  mapfile -t HFILES < <(harness_files | sort -u)
+  [ ${#HFILES[@]} -gt 0 ] || { echo "check-memory-secrets: no history files found for: ${HARNESSES[*]}"; exit 0; }
+  HHITS=0
+  for p in "${PATTERNS[@]}"; do
+    IFS='|' read -r id _ re <<<"$p"
+    [ "$NOISY" -eq 0 ] && [[ "$NOISY_IDS" == *" $id "* ]] && continue
+    while IFS= read -r row; do          # row = path:count (-H keeps the path even for a one-file batch)
+      cnt=${row##*:}; path=${row%:*}
+      [ "$cnt" -gt 0 ] 2>/dev/null || continue
+      is_allowed "$path" 0 && continue
+      printf '%s: [%s] x%s\n' "$path" "$id" "$cnt"
+      HHITS=$((HHITS + 1))
+    done < <(printf '%s\0' "${HFILES[@]}" | xargs -0 -P4 grep -aHEc -- "$re" 2>/dev/null)
+  done
+  echo "check-memory-secrets: ${HHITS} file/pattern pair(s) flagged across ${#HFILES[@]} file(s) in: ${HARNESSES[*]}" >&2
+  [ "$HHITS" -eq 0 ] && exit 0 || exit 1
+fi
 
 exclude_re=$(printf '%s|' "${EXCLUDES[@]}"); exclude_re=${exclude_re%|}
 mapfile -t FILES < <(collect | grep -vE "$exclude_re" 2>/dev/null | sort -u)

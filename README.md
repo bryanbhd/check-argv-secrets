@@ -94,6 +94,11 @@ Options:
 - `--dry-run` — with `--scrub`/`--purge-line`: show what would change, don't write
 - `--show-match` — also print the matching text. Off by default: a finding is reported as
   `file:line: [pattern-id]` so the scan never copies a secret into your terminal, a CI log or an agent transcript
+- `--harness NAME` — scan a tool's whole history, not only memory notes: `claude`, `opencode`, `codex`,
+  `vscode`, `ollama` or `all` (repeatable). It covers session transcripts and chat databases. It is read-only and
+  counts-only (`file: [pattern-id] xN`), skips credential files such as `auth.json`, and refuses `--scrub`,
+  `--purge-line` and `--show-match`. A count is a pattern match, not a confirmed secret: some patterns
+  (`ado-pat`, `hex-api-key`, `twilio-key`) match ordinary long strings, so triage the specific ones first
 - `--allow-file FILE` — allow-list file: one `FILE:LINE` or `FILE` per line to skip
 - `--patterns FILE` — extra patterns from an external scanner (see below)
 - `--exclude REGEX` — skip files matching REGEX (repeatable)

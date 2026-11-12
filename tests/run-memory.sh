@@ -73,4 +73,48 @@ bak=$(ls "$T/mem"/notes.md.bak-* 2>/dev/null | head -1)
 # 6. usage error
 bash $S --no-such-flag >/dev/null 2>&1; [ $? -eq 2 ] && ok "unknown flag exits 2" || bad "unknown flag exits 2"
 
+# 7. --harness: whole-history scan in a fake HOME (never the real one). Read-only, counts-only, skips credential files.
+H="$T/home"; mkdir -p "$H/.claude/projects/p1" "$H/.local/share/opencode/storage" "$H/.codex/sessions" "$H/.ollama" \
+  "$H/.vscode-server/data/User/workspaceStorage/w1"
+printf '{"role":"user","text":"here is a key %s ok"}\n' "$GH" >"$H/.claude/projects/p1/s1.jsonl"
+printf '{"msg":"%s"}\n' "$HVS" >"$H/.local/share/opencode/storage/m1.json"
+printf '{"auth":"%s"}\n' "$GH" >"$H/.local/share/opencode/auth.json"             # credential file: must be skipped
+printf '{"line":"%s"}\n' "$GH" >"$H/.codex/sessions/r1.jsonl"
+printf 'PGPASSWORD=%s psql\n' "SecretPw${URLPW}" >"$H/.ollama/history"
+printf 'binary-ish \001 %s \002\n' "$GH" >"$H/.vscode-server/data/User/workspaceStorage/w1/state.vscdb"
+printf '{"clean":true}\n' >"$H/.claude/projects/p1/clean.jsonl"
+snap=$(find "$H" -type f -exec sha256sum {} + | sort)
+
+out=$(HOME="$H" bash $S --harness all 2>/dev/null); rc=$?
+[ $rc -eq 1 ] && ok "--harness exits 1 on findings" || bad "--harness exits 1 on findings (got $rc)"
+for want in "s1.jsonl: [gh-pat] x1" "m1.json: [vault-token] x1" "r1.jsonl: [gh-pat] x1" "history: [pgpassword] x1" "state.vscdb: [gh-pat] x1"; do
+  case "$out" in *"$want"*) ok "flagged: $want" ;; *) bad "missing: $want" ;; esac
+done
+case "$out" in *auth.json*) bad "credential file auth.json was scanned" ;; *) ok "auth.json is skipped" ;; esac
+case "$out" in *clean.jsonl*) bad "clean file flagged" ;; *) ok "clean transcript not flagged" ;; esac
+for v in "$GH" "$HVS" "$URLPW"; do case "$out" in *"$v"*) bad "--harness printed a value"; break;; esac; done
+[ "$(find "$H" -type f -exec sha256sum {} + | sort)" = "$snap" ] && ok "--harness changed no file" || bad "--harness modified a file"
+
+HOME="$H" bash $S --harness claude --scrub >/dev/null 2>&1; [ $? -eq 2 ] && ok "--harness refuses --scrub" || bad "--harness refuses --scrub"
+HOME="$H" bash $S --harness claude --purge-line >/dev/null 2>&1; [ $? -eq 2 ] && ok "--harness refuses --purge-line" || bad "--harness refuses --purge-line"
+HOME="$H" bash $S --harness claude --show-match >/dev/null 2>&1; [ $? -eq 2 ] && ok "--harness refuses --show-match" || bad "--harness refuses --show-match"
+bash $S --harness nonsense >/dev/null 2>&1; [ $? -eq 2 ] && ok "unknown harness exits 2" || bad "unknown harness exits 2"
+HOME="$T/emptyhome" bash $S --harness all >/dev/null 2>&1; [ $? -eq 0 ] && ok "no history files exits 0" || bad "no history files exits 0"
+printf '{"x":1}\n' >"$H/.claude/projects/p1/s1.jsonl"; rm -f "$H/.local/share/opencode/storage/m1.json" "$H/.codex/sessions/r1.jsonl" "$H/.ollama/history" "$H/.vscode-server/data/User/workspaceStorage/w1/state.vscdb"
+HOME="$H" bash $S --harness all >/dev/null 2>&1; [ $? -eq 0 ] && ok "clean history exits 0 (auth.json ignored)" || bad "clean history exits 0"
+
+# 8. noisy patterns are tightened: a long mixed-case string is not an Azure DevOps PAT; a real-shaped one is
+mkdir -p "$T/n"
+printf 'blob %s end\n' "$(rep a 20)$(rep Q 16)$(rep 7 16)" >"$T/n/noise.md"
+bash $S -q "$T/n" >/dev/null 2>&1 && ok "mixed-case 52-char string is not flagged as ado-pat" || bad "ado-pat still matches mixed-case noise"
+printf 'pat %s end\n' "$(rep b 26)$(rep 3 26)" >"$T/n/pat.md"
+o=$(bash $S -q "$T/n/pat.md" 2>/dev/null); case "$o" in *"[ado-pat]"*) true;; *) false;; esac && ok "52-char base32 token is flagged as ado-pat" || bad "ado-pat misses a real-shaped token"
+printf 'sk %s end\n' "SK$(rep a 32)" >"$T/n/tw.md"
+o=$(bash $S -q "$T/n/tw.md" 2>/dev/null); case "$o" in *"[twilio-key]"*) true;; *) false;; esac && ok "Twilio SK+32 hex is flagged" || bad "twilio-key misses SK+32 hex"
+printf 'word %s\n' "SKIPPINGTHISVERYLONGWORDWITHNOHEXATALLXYZ" >"$T/n/tw2.md"
+bash $S -q "$T/n/tw2.md" >/dev/null 2>&1 && ok "ordinary SK-word is not flagged" || bad "twilio-key matches an ordinary word"
+mkdir -p "$T/h2/.claude/projects/p"; printf '{"sha":"%s"}\n' "$(rep 9 64)" >"$T/h2/.claude/projects/p/s.jsonl"
+HOME="$T/h2" bash $S --harness claude >/dev/null 2>&1 && ok "--harness skips hex-api-key by default" || bad "--harness flagged a bare sha256"
+HOME="$T/h2" bash $S --harness claude --noisy >/dev/null 2>&1; [ $? -eq 1 ] && ok "--noisy turns hex-api-key back on" || bad "--noisy does not enable hex-api-key"
+
 exit $fail
