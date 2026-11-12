@@ -53,7 +53,7 @@ PATHS=()
 PATTERNS=(
   # URL-embedded credentials: scheme://user:PASS@host or scheme://:PASS@host
   # Require 6+ chars in password to avoid false positives on placeholders like PASS/xxx
-  "url-cred|credential embedded in a URL|((https?|postgresql?|redis|amqp|mongodb|mysql)://[^:/]*:[^@/]{6,}@)"
+  "url-cred|credential embedded in a URL|((https?|postgresql?|redis|amqp|mongodb|mysql)://[^:/[:space:]\"'\\\\]*:[^@/[:space:]\"'\\\\[][^@/[:space:]\"'\\\\]{5,}@)"
 
   # Vault tokens (hvs. prefix is the real format)
   "vault-token|Vault root/unseal token|hvs\.[A-Za-z0-9_-]{20,}"

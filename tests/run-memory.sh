@@ -117,4 +117,10 @@ mkdir -p "$T/h2/.claude/projects/p"; printf '{"sha":"%s"}\n' "$(rep 9 64)" >"$T/
 HOME="$T/h2" bash $S --harness claude >/dev/null 2>&1 && ok "--harness skips hex-api-key by default" || bad "--harness flagged a bare sha256"
 HOME="$T/h2" bash $S --harness claude --noisy >/dev/null 2>&1; [ $? -eq 1 ] && ok "--noisy turns hex-api-key back on" || bad "--noisy does not enable hex-api-key"
 
+# 9. url-cred must not run across JSON punctuation (it once matched https://host:8080","b":"x@ and broke scrubbed JSON)
+mkdir -p "$T/u"; printf '{"a":"https://h.example:8080","b":"x@y.example/z"}\n' >"$T/u/json.md"
+bash $S -q "$T/u" >/dev/null 2>&1 && ok "URL-shaped JSON punctuation is not a credential" || bad "url-cred runs across JSON punctuation"
+printf 'see postgresql://app:%s@db.example.test/x\n' "$URLPW" >"$T/u/real.md"
+o=$(bash $S -q "$T/u/real.md" 2>/dev/null); case "$o" in *"[url-cred]"*) ok "a real URL credential is still flagged";; *) bad "url-cred stopped matching a real one";; esac
+
 exit $fail

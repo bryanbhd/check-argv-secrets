@@ -104,6 +104,22 @@ Options:
 - `--exclude REGEX` — skip files matching REGEX (repeatable)
 - `-q` — findings only
 
+### Staging a scrubbed copy of agent history
+
+`--harness` only reports. To clean the history itself without risking it, `stage-harness-scrub.py` writes scrubbed
+**copies** and never modifies an original:
+
+```bash
+bash check-memory-secrets.sh --harness all > scan.txt
+python3 stage-harness-scrub.py --flagged scan.txt --out ~/scrub-staging-DATE
+```
+
+Each secret becomes `[REDACTED:<keyed fingerprint>]`; a private key block is replaced whole. Every staged file is
+rescanned and, if it was valid JSON, re-parsed before it counts. SQLite databases, files changed in the last 15
+minutes (a live session) and anything outside `$HOME` are skipped and listed in `manifest.json`. Moving staged files
+over the originals is a separate step you do yourself after taking a backup. Rotate the secrets as well: a scrubbed
+local copy does not recall anything already sent to a model provider or a log service.
+
 ### Extensible patterns from other scanners
 
 The `--patterns FILE` flag accepts external pattern sets in a simple format:
