@@ -19,6 +19,8 @@
 #   --scrub                    replace secrets in-place with [REDACTED] (creates .bak-YYYYMMDD)
 #   --purge-line               delete entire lines containing secrets (creates .bak-YYYYMMDD)
 #   --dry-run                  with --scrub/--purge-line: show what would change, don't write
+#   --show-match               also print the matching text (OFF by default: a finding must not copy the secret
+#                              into your terminal, logs or an agent transcript)
 #   -q, --quiet                only print findings
 #   -h, --help
 #
@@ -31,6 +33,7 @@ QUIET=0
 SCRUB=0
 DRY_RUN=0
 PURGE_LINE=0
+SHOW_MATCH=0
 SCAN_MEMORY=0
 SCAN_ALL=0
 ALLOW_FILE=""
@@ -127,6 +130,7 @@ while [ $# -gt 0 ]; do
     --scrub) SCRUB=1; shift ;;
     --purge-line) PURGE_LINE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --show-match) SHOW_MATCH=1; shift ;;
     -q|--quiet) QUIET=1; shift ;;
     -h|--help) sed -n '2,/^set -uo/{/^set -uo/d;s/^# \{0,1\}//;p}' "$0"; exit 0 ;;
     --) shift; PATHS+=("$@"); break ;;
@@ -229,7 +233,11 @@ if [ "$HITS" -gt 0 ]; then
   # Print findings
   for f in "${FINDINGS[@]}"; do
     IFS='|' read -r file lineno id line <<<"$f"
-    printf '%s:%s: [%s] %s\n' "$file" "$lineno" "$id" "$(sed 's/^[[:space:]]*//' <<<"${line:0:160}")"
+    if [ "$SHOW_MATCH" -eq 1 ]; then
+      printf '%s:%s: [%s] %s\n' "$file" "$lineno" "$id" "$(sed 's/^[[:space:]]*//' <<<"${line:0:160}")"
+    else
+      printf '%s:%s: [%s]\n' "$file" "$lineno" "$id"
+    fi
   done
 
   if [ "$SCRUB" -eq 1 ] || [ "$PURGE_LINE" -eq 1 ]; then
@@ -260,16 +268,9 @@ if [ "$HITS" -gt 0 ]; then
       tmp=$(mktemp) || continue
 
       if [ "$PURGE_LINE" -eq 1 ]; then
-        # Delete lines containing secrets
+        # Delete the flagged lines by number (never by content, so a repeated line elsewhere is kept)
         lines="${FILE_LINES["$file"]}"
-        grep -v -nE "$(printf '%s\n' $lines | tr ' ' '\n' | sed 's/^/^[[:space:]]*//' | paste -sd'|')" "$file" > "$tmp" || true
-        # Alternative: use sed to delete specific line numbers
-        if [ -s "$tmp" ]; then
-          :
-        else
-          # Fallback: delete by line numbers
-          sed -i "${lines// /,}d" "$file" && mv "$file" "$tmp"
-        fi
+        sed "$(printf '%sd;' $lines)" "$file" > "$tmp"
       else
         # Scrub mode: replace matched secret portions with [REDACTED]
         cp "$file" "$tmp"

@@ -92,6 +92,8 @@ Options:
 - `--scrub` — replace secret values with `[REDACTED]` in-place (creates `.bak-YYYYMMDD`)
 - `--purge-line` — delete entire lines containing secrets (creates `.bak-YYYYMMDD`)
 - `--dry-run` — with `--scrub`/`--purge-line`: show what would change, don't write
+- `--show-match` — also print the matching text. Off by default: a finding is reported as
+  `file:line: [pattern-id]` so the scan never copies a secret into your terminal, a CI log or an agent transcript
 - `--allow-file FILE` — allow-list file: one `FILE:LINE` or `FILE` per line to skip
 - `--patterns FILE` — extra patterns from an external scanner (see below)
 - `--exclude REGEX` — skip files matching REGEX (repeatable)
